@@ -1,7 +1,14 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { assertFile, awsJson, isWindows, python, root, run } from './lib.mjs'
-import { deniedIamEvaluations, GENERIC_DEPLOY_ACTIONS, passRoleSimulationArgs } from './iam-policy-simulation.mjs'
+import {
+  deniedIamEvaluations,
+  dynamoProvisioningSimulationGroups,
+  dynamoRuntimeSimulationGroups,
+  formatIamSimulationError,
+  GENERIC_DEPLOY_ACTIONS,
+  passRoleSimulationArgs,
+} from './iam-policy-simulation.mjs'
 
 const args = process.argv.slice(2)
 const dry = args.includes('--dry-run') || args.includes('--plan-only')
@@ -67,32 +74,38 @@ check(trusted.includes('lambda.amazonaws.com'), 'LabRole existente permite ser a
 let callerArn = identity.Arn
 const assumed = callerArn.match(/^arn:aws:sts::(\d{12}):assumed-role\/(.+)\/[^/]+$/)
 if (assumed) callerArn = `arn:aws:iam::${assumed[1]}:role/${assumed[2]}`
-const simulate = (principal, actions, resources) => {
+const simulate = (principal, actions, resources, label = 'permisos de despliegue') => {
   let result
   try { result = awsJson(['iam', 'simulate-principal-policy', '--policy-source-arn', principal, '--action-names', ...actions, '--resource-arns', ...resources, '--region', region]) }
-  catch (error) { fail(`Learner Lab no permite verificar simulacion IAM en modo lectura; se detiene antes de desplegar: ${error.message}`) }
+  catch (error) { fail(formatIamSimulationError(error, label, actions, resources)) }
   const blocked = deniedIamEvaluations(result.EvaluationResults, actions)
-  if (blocked.length) fail(`Permisos requeridos no concedidos para ${principal}: ${blocked.map((entry) => `${entry.EvalActionName}=${entry.EvalDecision}`).join(', ')}`)
-  console.log(`✓ Permisos IAM confirmados para ${principal}: ${actions.length} acciones`)
+  if (blocked.length) fail(`Denegacion IAM para ${label} (${principal}): ${blocked.map((entry) => `${entry.EvalActionName}=${entry.EvalDecision}`).join(', ')}`)
+  console.log(`[OK] Permisos IAM confirmados para ${label} (${principal}): ${actions.length} acciones`)
 }
-simulate(callerArn, GENERIC_DEPLOY_ACTIONS, ['*'])
+simulate(callerArn, GENERIC_DEPLOY_ACTIONS, ['*'], 'acciones generales de despliegue')
 let passRoleResult
 try { passRoleResult = awsJson(passRoleSimulationArgs(callerArn, roleArn, region)) }
-catch (error) { fail(`No fue posible simular iam:PassRole sobre LabRole con contexto Lambda: ${error.message}`) }
+catch (error) { fail(formatIamSimulationError(error, 'iam:PassRole para Lambda', ['iam:PassRole'], [roleArn])) }
 const passRoleBlocked = deniedIamEvaluations(passRoleResult.EvaluationResults, ['iam:PassRole'])
-if (passRoleBlocked.length) fail(`iam:PassRole no autorizado para ${callerArn} sobre ${roleArn}: ${passRoleBlocked.map((entry) => `${entry.EvalDecision}${entry.MissingContextValues?.length ? ` (contexto faltante: ${entry.MissingContextValues.join(', ')})` : ''}`).join(', ')}`)
-console.log(`âœ“ iam:PassRole permitido para ${callerArn} sobre ${roleArn} con iam:PassedToService=lambda.amazonaws.com`)
-const tableArns = [names.missions, names.telemetry].map((name) => `arn:aws:dynamodb:${region}:${identity.Account}:table/${name}`)
-simulate(roleArn, ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:TransactWriteItems'], [...tableArns, ...tableArns.map((arn) => `${arn}/index/*`)])
-simulate(roleArn, ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'], ['*'])
+if (passRoleBlocked.length) fail(`Denegacion IAM para iam:PassRole (${callerArn} -> ${roleArn}): ${passRoleBlocked.map((entry) => `${entry.EvalDecision}${entry.MissingContextValues?.length ? ` (contexto faltante: ${entry.MissingContextValues.join(', ')})` : ''}`).join(', ')}`)
+console.log(`[OK] iam:PassRole permitido para ${callerArn} sobre ${roleArn} con iam:PassedToService=lambda.amazonaws.com`)
+for (const group of dynamoRuntimeSimulationGroups(region, identity.Account, names)) {
+  simulate(roleArn, group.actions, group.resources, group.label)
+}
+simulate(roleArn, ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'], ['*'], 'CloudWatch Logs de ejecucion')
 
 if (process.env.RUTEA_CREATE_DYNAMO_TABLES === 'true') {
-  simulate(callerArn, ['dynamodb:CreateTable', 'dynamodb:DescribeTable', 'dynamodb:UpdateTimeToLive', 'dynamodb:TagResource'], ['*'])
+  for (const group of dynamoProvisioningSimulationGroups(region, identity.Account, names, true)) {
+    simulate(callerArn, group.actions, group.resources, group.label)
+  }
   for (const table of Object.values(names)) {
     try { awsJson(['dynamodb', 'describe-table', '--table-name', table, '--region', region]); fail(`La tabla ${table} ya existe; desactiva creacion automatica para proteger datos`) }
     catch (error) { if (/BLOQUEO:/.test(error.message)) throw error; if (!/ResourceNotFoundException|ResourceNotFound/.test(error.message)) fail(`No se pudo revisar tabla ${table}: ${error.message}`) }
   }
 } else {
+  for (const group of dynamoProvisioningSimulationGroups(region, identity.Account, names, false)) {
+    simulate(callerArn, group.actions, group.resources, group.label)
+  }
   for (const table of Object.values(names)) {
     try { awsJson(['dynamodb', 'describe-table', '--table-name', table, '--region', region]); console.log(`✓ Tabla DynamoDB legible: ${table}`) }
     catch (error) { fail(`No se encontro/leyo la tabla ${table}; crea las tablas solo si Learner Lab autoriza, con RUTEA_CREATE_DYNAMO_TABLES=true: ${error.message}`) }
