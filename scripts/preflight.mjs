@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { assertFile, awsJson, isWindows, python, root, run } from './lib.mjs'
+import { deniedIamEvaluations, GENERIC_DEPLOY_ACTIONS, passRoleSimulationArgs } from './iam-policy-simulation.mjs'
 
 const args = process.argv.slice(2)
 const dry = args.includes('--dry-run') || args.includes('--plan-only')
@@ -70,20 +71,17 @@ const simulate = (principal, actions, resources) => {
   let result
   try { result = awsJson(['iam', 'simulate-principal-policy', '--policy-source-arn', principal, '--action-names', ...actions, '--resource-arns', ...resources, '--region', region]) }
   catch (error) { fail(`Learner Lab no permite verificar simulacion IAM en modo lectura; se detiene antes de desplegar: ${error.message}`) }
-  const blocked = result.EvaluationResults?.filter((entry) => entry.EvalDecision !== 'allowed') || []
+  const blocked = deniedIamEvaluations(result.EvaluationResults, actions)
   if (blocked.length) fail(`Permisos requeridos no concedidos para ${principal}: ${blocked.map((entry) => `${entry.EvalActionName}=${entry.EvalDecision}`).join(', ')}`)
   console.log(`✓ Permisos IAM confirmados para ${principal}: ${actions.length} acciones`)
 }
-const deployActions = [
-  'cloudformation:CreateStack', 'cloudformation:UpdateStack', 'cloudformation:DeleteStack', 'cloudformation:DescribeStacks', 'cloudformation:CreateChangeSet', 'cloudformation:ExecuteChangeSet', 'cloudformation:DescribeChangeSet',
-  'lambda:CreateFunction', 'lambda:GetFunction', 'lambda:UpdateFunctionCode', 'lambda:UpdateFunctionConfiguration', 'lambda:DeleteFunction', 'lambda:AddPermission', 'lambda:RemovePermission', 'lambda:TagResource', 'lambda:UntagResource',
-  'apigateway:POST', 'apigateway:GET', 'apigateway:PATCH', 'apigateway:DELETE',
-  'logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents', 'logs:PutRetentionPolicy', 'iam:PassRole',
-  's3:CreateBucket', 's3:ListBucket', 's3:GetObject', 's3:PutObject', 's3:DeleteObject', 's3:GetBucketLocation', 's3:PutBucketTagging', 's3:GetBucketTagging',
-  'dynamodb:DescribeTable', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:TransactWriteItems',
-]
-simulate(callerArn, deployActions, ['*'])
-simulate(callerArn, ['iam:PassRole'], [roleArn])
+simulate(callerArn, GENERIC_DEPLOY_ACTIONS, ['*'])
+let passRoleResult
+try { passRoleResult = awsJson(passRoleSimulationArgs(callerArn, roleArn, region)) }
+catch (error) { fail(`No fue posible simular iam:PassRole sobre LabRole con contexto Lambda: ${error.message}`) }
+const passRoleBlocked = deniedIamEvaluations(passRoleResult.EvaluationResults, ['iam:PassRole'])
+if (passRoleBlocked.length) fail(`iam:PassRole no autorizado para ${callerArn} sobre ${roleArn}: ${passRoleBlocked.map((entry) => `${entry.EvalDecision}${entry.MissingContextValues?.length ? ` (contexto faltante: ${entry.MissingContextValues.join(', ')})` : ''}`).join(', ')}`)
+console.log(`âœ“ iam:PassRole permitido para ${callerArn} sobre ${roleArn} con iam:PassedToService=lambda.amazonaws.com`)
 const tableArns = [names.missions, names.telemetry].map((name) => `arn:aws:dynamodb:${region}:${identity.Account}:table/${name}`)
 simulate(roleArn, ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:TransactWriteItems'], [...tableArns, ...tableArns.map((arn) => `${arn}/index/*`)])
 simulate(roleArn, ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'], ['*'])
