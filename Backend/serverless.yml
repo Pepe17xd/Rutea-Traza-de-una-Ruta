@@ -1,0 +1,152 @@
+service: rutea-api
+frameworkVersion: "4.43.0"
+
+provider:
+  name: aws
+  runtime: python3.12
+  architecture: x86_64
+  region: ${opt:region, env:AWS_REGION, 'us-east-1'}
+  stage: ${opt:stage, env:AWS_STAGE, 'academy'}
+  iam:
+    # Explicit account input is checked against STS and the pre-existing role.
+    # A string ARN prevents Serverless from generating a Lambda role.
+    role: arn:aws:iam::${env:AWS_ACCOUNT_ID}:role/LabRole
+  memorySize: 512
+  timeout: 15
+  environment:
+    HECTOR_STORAGE: dynamodb
+    HECTOR_REQUIRE_AUTH: 'true'
+    HECTOR_ALLOWED_ORIGINS: ${env:HECTOR_ALLOWED_ORIGINS, ''}
+    HECTOR_OPERATOR_TOKEN: ${env:HECTOR_OPERATOR_TOKEN, ''}
+    HECTOR_DEVICE_TOKEN: ${env:HECTOR_DEVICE_TOKEN, ''}
+    HECTOR_TELEMETRY_MAX_AGE_S: ${env:HECTOR_TELEMETRY_MAX_AGE_S, '15'}
+    HECTOR_TELEMETRY_MAX_ACCURACY_M: ${env:HECTOR_TELEMETRY_MAX_ACCURACY_M, '25'}
+    HECTOR_TELEMETRY_RETENTION_DAYS: ${env:HECTOR_TELEMETRY_RETENTION_DAYS, '30'}
+    HECTOR_DESTINATION_TTL_S: ${env:HECTOR_DESTINATION_TTL_S, '45'}
+    HECTOR_ML_ENABLED: 'false'
+    HECTOR_MODEL_PATH: /var/task/artifacts
+    MISSIONS_TABLE: ${env:MISSIONS_TABLE, 'rutea-${sls:stage}-missions'}
+    TELEMETRY_TABLE: ${env:TELEMETRY_TABLE, 'rutea-${sls:stage}-telemetry'}
+functions:
+  api:
+    handler: app.lambda_handler.handler
+    reservedConcurrency: 5
+    events:
+      - httpApi:
+          path: /
+          method: ANY
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
+
+package:
+  patterns:
+    - '!tests/**'
+    - '!data/**'
+    - '!.pytest-tmp/**'
+    - '!tests/.pytest-tmp/**'
+    - '!.pytest-rutea-aws/**'
+    - '!node_modules/**'
+    - '!.venv/**'
+    - '!venv/**'
+    - '!.serverless/**'
+    - '!.git/**'
+    - '!artifacts/*.joblib'
+    - '!artifacts/**/*.joblib'
+    - '!**/__pycache__/**'
+    - '!**/*.py[cod]'
+    - '!app/ml/train.py'
+    - '!app/ml/evaluate.py'
+    - '!app/ml/dataset.py'
+    - '!app/simulator/**'
+    - '!app/sensors/**'
+    - '!.env'
+    - '!*.db'
+    - 'app/frontend_dist/**'
+
+custom:
+  pythonRequirements:
+    fileName: requirements-lambda.txt
+    # Deploy from the supported Linux Academy VM so native wheels match Lambda.
+    dockerizePip: false
+    slim: true
+    strip: false
+    invalidateCaches: true
+
+resources:
+  Conditions:
+    CreateDynamoTables:
+      Fn::Equals:
+        - ${param:createDynamoTables, 'false'}
+        - 'true'
+  Resources:
+    ApiLogGroup:
+      Type: AWS::Logs::LogGroup
+      DependsOn: ApiLambdaFunction
+      Properties:
+        LogGroupName:
+          Fn::Sub: /aws/lambda/${ApiLambdaFunction}
+        RetentionInDays: 7
+    MissionsTable:
+      Type: AWS::DynamoDB::Table
+      Condition: CreateDynamoTables
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        TableName: ${env:MISSIONS_TABLE, 'rutea-${sls:stage}-missions'}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: mission_id
+            AttributeType: S
+          - AttributeName: robot_id
+            AttributeType: S
+          - AttributeName: created_at
+            AttributeType: S
+        KeySchema:
+          - AttributeName: mission_id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: robot_created
+            KeySchema:
+              - AttributeName: robot_id
+                KeyType: HASH
+              - AttributeName: created_at
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        Tags:
+          - Key: Application
+            Value: RUTEA
+    TelemetryTable:
+      Type: AWS::DynamoDB::Table
+      Condition: CreateDynamoTables
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        TableName: ${env:TELEMETRY_TABLE, 'rutea-${sls:stage}-telemetry'}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: mission_id
+            AttributeType: S
+          - AttributeName: sample_key
+            AttributeType: S
+        KeySchema:
+          - AttributeName: mission_id
+            KeyType: HASH
+          - AttributeName: sample_key
+            KeyType: RANGE
+        TimeToLiveSpecification:
+          AttributeName: expires_at
+          Enabled: true
+        Tags:
+          - Key: Application
+            Value: RUTEA
+  Outputs:
+    FrontendUrl:
+      Description: Aplicación RUTEA servida por el mismo origen HTTPS de API Gateway
+      Value:
+        Fn::Sub: https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/
+    ApiBaseUrl:
+      Description: API HTTPS base consumida por el frontend
+      Value:
+        Fn::Sub: https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/api/v1

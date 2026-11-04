@@ -1,0 +1,28 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      HECTOR_STORAGE: sqlite
+      HECTOR_SQLITE_PATH: /app/data/rutea.db
+      HECTOR_ALLOWED_ORIGINS: ${HECTOR_ALLOWED_ORIGINS:-http://localhost:5173}
+      HECTOR_OPERATOR_TOKEN: ${HECTOR_OPERATOR_TOKEN:-}
+      HECTOR_DEVICE_TOKEN: ${HECTOR_DEVICE_TOKEN:-}
+      HECTOR_TELEMETRY_MAX_AGE_S: ${HECTOR_TELEMETRY_MAX_AGE_S:-15}
+      HECTOR_TELEMETRY_MAX_ACCURACY_M: ${HECTOR_TELEMETRY_MAX_ACCURACY_M:-25}
+      HECTOR_DESTINATION_TTL_S: ${HECTOR_DESTINATION_TTL_S:-45}
+    volumes:
+      - rutea_sqlite:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  rutea_sqlite:

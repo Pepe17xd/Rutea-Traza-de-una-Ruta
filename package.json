@@ -1,0 +1,20 @@
+{
+  "name": "rutea-monorepo",
+  "private": true,
+  "version": "1.2.0",
+  "type": "module",
+  "scripts": {
+    "preflight": "node scripts/preflight.mjs",
+    "academy:check": "node scripts/preflight.mjs",
+    "deploy:academy": "node scripts/deploy-academy.mjs",
+    "test:all": "node scripts/test-all.mjs",
+    "build:all": "node scripts/build-all.mjs",
+    "verify:academy": "node scripts/verify-academy.mjs",
+    "remove:academy": "node scripts/remove-academy.mjs",
+    "cleanup:academy": "node scripts/remove-academy.mjs",
+    "audit:secrets": "node scripts/audit-secrets.mjs",
+    "config:validate": "python scripts/validate-config.py",
+    "firmware:test": "python -m platformio test -e native",
+    "firmware:build": "node scripts/build-firmware.mjs"
+  }
+}

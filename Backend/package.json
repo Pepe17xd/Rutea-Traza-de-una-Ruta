@@ -1,0 +1,7 @@
+{
+  "name": "rutea-api-infrastructure",
+  "private": true,
+  "devDependencies": {
+    "serverless": "4.43.0"
+  }
+}

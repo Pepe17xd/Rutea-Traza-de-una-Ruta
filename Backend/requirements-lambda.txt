@@ -1,0 +1,8 @@
+# Minimal runtime set. AWS Lambda's Python runtime includes boto3/botocore.
+# Build on Linux (the Serverless plugin uses Docker) for pyproj native wheels.
+fastapi>=0.110,<1
+mangum>=0.19,<1
+pydantic>=2.6,<3
+pydantic-settings>=2.2,<3
+pyproj>=3.6,<4
+python-dotenv>=1.0,<2

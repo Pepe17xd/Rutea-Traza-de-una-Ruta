@@ -1,0 +1,7 @@
+# Inventario validado del monorepo para una futura división de servicios.
+# No desplegar desde este archivo en V1: el modo zero-config de Compose crea
+# state compartido en S3 + SSM. El flujo actual (un servicio) usa el comando
+# npm run deploy:academy, que llama directamente a Backend/serverless.yml.
+services:
+  api:
+    path: Backend

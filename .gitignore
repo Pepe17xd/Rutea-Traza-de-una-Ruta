@@ -1,0 +1,67 @@
+# Secrets and local environment files
+**/.env
+**/.env.*
+!**/.env.example
+**/secrets.*
+!**/secrets.example.*
+**/*credentials*
+**/.aws/
+
+# Python
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+Backend/data/
+Backend/artifacts/
+Backend/app/frontend_dist/
+Backend/.docker-cli-rutea/
+Backend/.pytest-rutea-aws/
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+
+# Frontend
+Frontend/node_modules/
+Frontend/dist/
+Frontend/*.tsbuildinfo
+node_modules/
+dist/
+
+# ESP32 / PlatformIO
+Firmware/.pio/
+Firmware/.platformio-core/
+Firmware/include/hector/secrets.h
+Firmware/.secrets.h
+Firmware/.cache/
+
+# Serverless, AWS and generated build outputs
+**/.serverless/
+.serverless/
+.serverlessrc
+.rutea-deploy-state.json
+RUTEA-recovery-source-*.zip
+.aws-sam/
+artifacts/
+coverage/
+*.log
+*.tmp
+*.swp
+Dockerfile.*.tmp
+compose.*.tmp
+
+# Editors and OS
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+Backend/tests/.pytest-tmp/
+!Backend/artifacts/
+Backend/artifacts/*
+!Backend/artifacts/metrics.json
