@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, pollIntervalMs, realtimeTransport } from '../api'
 import type { ApiEvent, Latest, Telemetry } from '../types'
 
-export function useRobotSocket(robot: string, missionId: string | null, initialSequence = -1, onLatest?: (value: Latest) => void) {
+export function useRobotSocket(robot: string, missionId: string | null, initialSequence = -1, onLatest?: (value: Latest) => void, enabled = true) {
   const [connected, setConnected] = useState(false)
   const [lastSeen, setLastSeen] = useState<number | null>(null)
   const [trace, setTrace] = useState<Telemetry[]>([])
@@ -13,6 +13,7 @@ export function useRobotSocket(robot: string, missionId: string | null, initialS
   useEffect(()=>{missionRef.current=missionId;setTrace([])},[missionId])
   useEffect(() => {
     let stopped = false; let socket: WebSocket | null = null; let retry = 800; let timer: number | undefined
+    if (!enabled) { setConnected(false); setLatestTelemetry(null); setTrace([]); return }
     if (realtimeTransport === 'polling') {
       let backoff = pollIntervalMs
       const poll = async () => {
@@ -93,6 +94,6 @@ export function useRobotSocket(robot: string, missionId: string | null, initialS
     }
     connect()
     return () => { stopped = true; window.clearTimeout(timer); socket?.close(); setConnected(false) }
-  }, [robot, onLatest])
+  }, [robot, onLatest, enabled])
   return { connected, lastSeen, trace, setTrace, latestTelemetry }
 }

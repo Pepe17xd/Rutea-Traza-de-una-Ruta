@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, Bot, Check, ChevronRight, CircleDot, Clock3, Compass, Crosshair, Droplet, Gauge, History, KeyRound, MapPin, Route, Send, ShieldAlert, Square, Waypoints, WifiOff } from 'lucide-react'
+﻿import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { FormEvent } from 'react'
+import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, Bot, Check, ChevronRight, CircleDot, Clock3, Compass, Crosshair, Droplet, Gauge, History, LogOut, Eye, EyeOff, MapPin, Route, Send, ShieldAlert, Square, Waypoints, WifiOff } from 'lucide-react'
 import { ApiError, api, missionPollIntervalMs, realtimeTransport } from './api'
 import { useRobotSocket } from './hooks/useRobotSocket'
 import MapView from './components/MapView'
@@ -33,10 +34,13 @@ export default function App() {
   const [pumpExchange, setPumpExchange] = useState<PumpExchange | null>(null)
   const [pumpBusy, setPumpBusy] = useState(false)
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState('')
-  const [operatorDialog, setOperatorDialog] = useState(false)
-  const [operatorTokenInput, setOperatorTokenInput] = useState('')
-  const [operatorDialogError, setOperatorDialogError] = useState('')
-  const { connected, lastSeen, trace: liveTrace, setTrace: setLiveTrace, latestTelemetry } = useRobotSocket(robotId, mission?.mission_id ?? null, latest?.telemetry?.sequence ?? -1, setLatest)
+  const [authenticated, setAuthenticated] = useState(false)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [authBusy, setAuthBusy] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const { connected, lastSeen, trace: liveTrace, setTrace: setLiveTrace, latestTelemetry } = useRobotSocket(robotId, mission?.mission_id ?? null, latest?.telemetry?.sequence ?? -1, setLatest, authenticated)
   const current = latestTelemetry && latestTelemetry.sequence > (latest?.telemetry?.sequence ?? -1) ? latestTelemetry : latest?.telemetry ?? latestTelemetry
   const sampleAgeS = current ? (Date.now()-Date.parse(current.timestamp))/1000 : Infinity
   const sampleFresh = Number.isFinite(sampleAgeS) && sampleAgeS >= -5 && sampleAgeS <= 15
@@ -53,9 +57,15 @@ export default function App() {
   const onPick = useCallback((point: Point) => { setLatInput(point.lat.toFixed(7)); setLonInput(point.lon.toFixed(7)) }, [])
   const ignorePick = useCallback(() => {}, [])
 
-  const loadLatest = useCallback(async () => { try { const value = await api.latest(robotId); setLatest(value); setError('') } catch (e) { if (e instanceof ApiError && e.status === 401) { setOperatorDialog(true); setError(''); return }; setError(e instanceof Error ? e.message : 'No se pudo consultar el robot') } }, [])
-  const loadMissions = useCallback(async () => { try { const all:Mission[]=[]; let cursor:string|null=null; do { const page=await api.missions(robotId,cursor); all.push(...page.items); cursor=page.next_cursor } while(cursor); setMissions(all) } catch { /* displayed in dashboard error state */ } }, [])
+  const loadLatest = useCallback(async () => { if (!authenticated) return; try { const value = await api.latest(robotId); setLatest(value); setError('') } catch (e) { if (e instanceof ApiError && e.status === 401) { setAuthenticated(false); setMission(null); setMissions([]); setError(''); return }; setError(e instanceof Error ? e.message : 'No se pudo consultar el robot') } }, [authenticated])
+  const loadMissions = useCallback(async () => { if (!authenticated) return; try { const all:Mission[]=[]; let cursor:string|null=null; do { const page=await api.missions(robotId,cursor); all.push(...page.items); cursor=page.next_cursor } while(cursor); setMissions(all) } catch { /* displayed in dashboard error state */ } }, [authenticated])
   useEffect(() => {
+    let active = true
+    void api.session().then(value => { if (active) setAuthenticated(value.authenticated) }).catch(() => { if (active) { setAuthenticated(false); setAuthError('No se pudo verificar la sesión con el servidor.') } }).finally(() => { if (active) setAuthLoading(false) })
+    return () => { active = false }
+  }, [])
+  useEffect(() => {
+    if (!authenticated) return
     void loadLatest()
     void loadMissions()
     if (realtimeTransport !== 'websocket') return
@@ -63,7 +73,7 @@ export default function App() {
       if (document.visibilityState === 'visible') void loadLatest()
     }, 15000)
     return () => window.clearInterval(interval)
-  }, [loadLatest, loadMissions])
+  }, [authenticated, loadLatest, loadMissions])
   useEffect(() => { if (!mission) { setLiveTrace([]); return }; let cancelled=false; void readTrace(mission.mission_id).then(items=>{if(!cancelled)setTrace(items)}).catch(() => {if(!cancelled)setTrace([])}); return ()=>{cancelled=true} }, [mission?.mission_id, setLiveTrace])
   useEffect(() => {
     const needsRefresh=Boolean(mission&&(mission.status==='PENDING'||mission.status==='ACTIVE'||(mission.status==='CANCELLED'&&mission.stop_requested_at&&!mission.stop_confirmed)))
@@ -80,22 +90,16 @@ export default function App() {
   const missionReady = Boolean(signalGood && current && position && current.gps_accuracy_m != null && current.gps_accuracy_is_bound !== false
     && current.gps_accuracy_m <= 1.5 && current.data_source !== 'RECORDED' && current.data_source !== 'SYNTHETIC')
 
-  async function connectOperator() {
-    const token = operatorTokenInput.trim()
-    if (!token) { setOperatorDialogError('Ingresa el token de operador.'); return }
-    api.setOperatorToken(token)
-    try {
-      const value = await api.latest(robotId)
-      setLatest(value)
-      setOperatorDialog(false)
-      setOperatorDialogError('')
-      setOperatorTokenInput('')
-      setError('')
-      void loadMissions()
-    } catch (e) {
-      api.setOperatorToken('')
-      setOperatorDialogError(e instanceof Error ? e.message : 'No se pudo validar el token.')
-    }
+  async function signIn(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setAuthBusy(true); setAuthError('')
+    try { await api.login(password); setPassword(''); setAuthenticated(true); setError('') }
+    catch (e) { setAuthError(e instanceof Error ? e.message : 'No se pudo iniciar sesión.') }
+    finally { setAuthBusy(false) }
+  }
+
+  async function signOut() {
+    try { await api.logout() } catch { /* the server session may already have expired */ }
+    setAuthenticated(false); setLatest(null); setMission(null); setMissions([]); setTrace([]); setSelected(null)
   }
 
   async function create() {
@@ -122,6 +126,9 @@ export default function App() {
     setSelected(item); setMission(item); setLatInput(item.destination.lat.toFixed(7)); setLonInput(item.destination.lon.toFixed(7)); setView('history')
   }
 
+  if (authLoading) return <div className="auth-screen"><div className="auth-card auth-loading"><img src="/rutea.svg" alt=""/><b>RUTEA</b><span>Comprobando sesión segura…</span></div></div>
+  if (!authenticated) return <main className="auth-screen"><div className="auth-layout"><section className="auth-visual" aria-hidden="true"><div className="visual-caption"><span>RUTEA / SISTEMAS AUT?NOMOS</span><h2>El camino,<br/><em>con claridad.</em></h2><p>Una perspectiva precisa para cada recorrido.</p></div><svg className="road-scene" viewBox="0 0 600 520" fill="none"><defs><linearGradient id="road" x1="300" y1="120" x2="300" y2="520" gradientUnits="userSpaceOnUse"><stop stopColor="#152d3a"/><stop offset="1" stopColor="#243d49"/></linearGradient><linearGradient id="beam" x1="300" y1="250" x2="300" y2="75" gradientUnits="userSpaceOnUse"><stop stopColor="#39d98a" stopOpacity=".24"/><stop offset="1" stopColor="#39d98a" stopOpacity="0"/></linearGradient></defs><path d="M270 145H330L570 520H30Z" fill="url(#road)"/><path d="M270 145 30 520M330 145 570 520" stroke="#40c9e8" strokeOpacity=".35" strokeWidth="2"/><path className="road-marks" d="M300 150V520" stroke="#cdece2" strokeOpacity=".48" strokeWidth="3" strokeDasharray="12 28"/><path d="M300 300C310 260 260 228 300 170" stroke="#39d98a" strokeWidth="3" strokeLinecap="round" strokeDasharray="5 7"/><path d="M275 290 255 120H345L325 290Z" fill="url(#beam)"/><g className="vehicle"><ellipse cx="300" cy="342" rx="70" ry="18" fill="#06121b" fillOpacity=".7"/><rect x="254" y="275" width="92" height="62" rx="17" fill="#102535" stroke="#6b9ba4" strokeWidth="2"/><path d="M266 291Q300 279 334 291L329 313H271Z" fill="#284d5c" stroke="#70bcc1"/><path d="M263 326H337" stroke="#39d98a" strokeWidth="3" strokeLinecap="round"/><circle className="car-light" cx="265" cy="316" r="4" fill="#b9fff0"/><circle className="car-light" cx="335" cy="316" r="4" fill="#b9fff0"/><path d="M286 276V268H314V276" stroke="#40c9e8" strokeWidth="3" strokeLinecap="round"/></g></svg><div className="visual-footer"><span>01 / NAVEGACI?N</span><span>DISE?ADO PARA AVANZAR <b>?</b></span></div></section><form className="auth-card" onSubmit={signIn}><div className="auth-brand"><img src="/rutea.svg" alt=""/><div><b>RUTEA</b><span>NAVEGACI?N AUT?NOMA</span></div></div><div className="auth-form-copy"><span className="section-kicker">CENTRO DE CONTROL</span><h1>Bienvenido de nuevo</h1><p>Ingresa tu contrase?a para acceder a la plataforma.</p></div><label htmlFor="operator-password">Contrase?a</label><div className="password-field"><input id="operator-password" type={showPassword?'text':'password'} autoComplete="current-password" autoFocus required maxLength={1024} value={password} onChange={event=>setPassword(event.target.value)} placeholder="Escribe tu contrase?a"/><button type="button" className="password-toggle" aria-label={showPassword?'Ocultar contrase?a':'Mostrar contrase?a'} aria-pressed={showPassword} onClick={()=>setShowPassword(!showPassword)}>{showPassword?<EyeOff size={18}/>:<Eye size={18}/>}</button></div><button className="primary-button" type="submit" disabled={authBusy||!password}>{authBusy?'Verificando?':<>Iniciar sesi?n <span aria-hidden="true">?</span></>}</button>{authError&&<div className="operator-auth-error" role="alert">{authError}</div>}<small className="auth-footnote"><ShieldAlert size={13}/> Acceso protegido ? sesi?n temporal</small></form></div></main>
+
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><img className="brand-logo" src="/rutea.svg" alt=""/></div><div><b>RUTEA</b><span>NAVEGACIÓN AUTÓNOMA</span></div></div>
@@ -134,11 +141,10 @@ export default function App() {
     </aside>
 
     <main className="main-area">
-      <header className="topbar"><div><div className="eyebrow">SISTEMA DE NAVEGACION</div><h1>{view==='panel'?'Panel de operación':view==='history'?'Historial de misiones':'Evaluación de modelo'}</h1></div><div className="top-actions"><div className={`connection ${signalGood?'online':'offline'}`}><span className="connection-dot"/><div><b>{signalGood?'DISPOSITIVO CONECTADO':(current?.data_source==='RECORDED'||latest?.device_status==='RECORDED')?'DATOS REGISTRADOS':(current?.data_source==='SYNTHETIC'||latest?.device_status==='SIMULATION')?'SIMULACION SEPARADA':latest?.device_status==='NO_VERIFICADO'?'FUENTE SIN VERIFICAR':'SIN DISPOSITIVO'}</b><small>{signalGood?`Telemetría ${ageText(measuredAge)}`:latest?.device_status==='NO_VERIFICADO'?'Se recibieron datos sin origen físico declarado':'Sin señal GPS / IMU'}</small></div></div><button type="button" className="operator-avatar" aria-label="Configurar acceso de operador" title="Acceso de operador" onClick={()=>{setOperatorDialogError('');setOperatorDialog(true)}}><KeyRound size={14}/></button></div></header>
+      <header className="topbar"><div><div className="eyebrow">SISTEMA DE NAVEGACION</div><h1>{view==='panel'?'Panel de operación':view==='history'?'Historial de misiones':'Evaluación de modelo'}</h1></div><div className="top-actions"><div className={`connection ${signalGood?'online':'offline'}`}><span className="connection-dot"/><div><b>{signalGood?'DISPOSITIVO CONECTADO':(current?.data_source==='RECORDED'||latest?.device_status==='RECORDED')?'DATOS REGISTRADOS':(current?.data_source==='SYNTHETIC'||latest?.device_status==='SIMULATION')?'SIMULACION SEPARADA':latest?.device_status==='NO_VERIFICADO'?'FUENTE SIN VERIFICAR':'SIN DISPOSITIVO'}</b><small>{signalGood?`Telemetría ${ageText(measuredAge)}`:latest?.device_status==='NO_VERIFICADO'?'Se recibieron datos sin origen físico declarado':'Sin señal GPS / IMU'}</small></div></div><button type="button" className="operator-avatar" aria-label="Cerrar sesi?n" title="Cerrar sesi?n" onClick={()=>void signOut()}><LogOut size={14}/></button></div></header>
 
       {error && <div className="alert error"><AlertTriangle size={17}/><span>{error}</span><button onClick={()=>setError('')}>Cerrar</button></div>}
       {notice && <div className="alert success"><Check size={17}/><span>{notice}</span><button onClick={()=>setNotice('')}>Cerrar</button></div>}
-      {operatorDialog && <div className="operator-overlay" role="presentation"><form className="operator-dialog" onSubmit={event=>{event.preventDefault();void connectOperator()}}><span className="section-kicker">ACCESO PROTEGIDO</span><h2>Conectar como operador</h2><p>El token se conserva solo en esta pestaña y no se incluye en el sitio publicado.</p><label htmlFor="operator-token">Token de operador</label><input id="operator-token" type="password" autoComplete="off" autoFocus value={operatorTokenInput} onChange={event=>setOperatorTokenInput(event.target.value)} placeholder="Pega aquí tu token"/><div className="operator-dialog-actions"><button type="button" className="secondary-button" onClick={()=>setOperatorDialog(false)}>Cerrar</button><button type="submit" className="primary-button"><KeyRound size={15}/> Validar y conectar</button></div>{operatorDialogError&&<div className="operator-auth-error" role="alert">{operatorDialogError}</div>}</form></div>}
 
       {view==='panel' && <>
         <section className="metric-grid">
@@ -202,3 +208,4 @@ function ModelComparison({comparison}:{comparison:{comparison?:Record<string,Rec
   return <div className="comparison-table-wrap"><table className="comparison-table"><thead><tr><th>Variante</th><th>RMSE lateral</th><th>Error máximo</th><th>Llegada</th><th>Tiempo</th></tr></thead><tbody>{(['base','base_plus_ml'] as const).map(key=>{const row=comparison.comparison?.[key];return <tr key={key}><td>{key==='base'?'Controlador base':'Base + ML'}</td><td>{num(row?.rmse_lateral_m,3)} m</td><td>{num(row?.max_lateral_error_m,3)} m</td><td>{row?.arrival_rate==null?'—':`${(row.arrival_rate*100).toFixed(0)}%`}</td><td>{row?.mean_time_s==null?'—':`${row.mean_time_s.toFixed(1)} s`}</td></tr>})}</tbody></table><div className="comparison-caption">Mismas condiciones iniciales · {comparison.seed ?? '—'} semilla · sin hardware</div></div>
 }
 function Sparkline({values}:{values:number[]}) { if(values.length<2)return <div className="chart-empty">No hay suficientes muestras para graficar.</div>; const max=Math.max(...values.map(Math.abs),.01); const points=values.map((v,i)=>`${(i/(values.length-1))*100},${50-(v/max)*44}`).join(' '); return <svg className="sparkline" viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="0" y1="50" x2="100" y2="50" className="zero-line"/><polyline points={points}/></svg> }
+

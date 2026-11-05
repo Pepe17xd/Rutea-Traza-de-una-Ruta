@@ -22,7 +22,7 @@ No se despliega un WebSocket persistente: el frontend AWS usa HTTP polling. Uvic
 
 ## Frontend
 
-Vite se compila con `VITE_API_BASE=/api/v1`, transport polling y el `robot_id` configurado. El token de operador no se incrusta en el bundle; se ingresa en la interfaz y permanece en `sessionStorage`. Los archivos estáticos se copian a `Backend/app/frontend_dist` antes del paquete Lambda. FastAPI entrega `/`, assets y rutas SPA por el mismo HTTPS de API Gateway; `/api/v1` sigue resolviendo endpoints. CORS entre sitios no es requerido por el frontend same-origin.
+Vite se compila con `VITE_API_BASE=/api/v1`, transport polling y el `robot_id` configurado. La pantalla solicita una contrase?a; FastAPI compara su hash Argon2id y emite una cookie de sesi?n HttpOnly/Secure/SameSite=Strict. La SPA no recibe credenciales maestras ni guarda tokens en storage. Los archivos estáticos se copian a `Backend/app/frontend_dist` antes del paquete Lambda. FastAPI entrega `/`, assets y rutas SPA por el mismo HTTPS de API Gateway; `/api/v1` sigue resolviendo endpoints. CORS entre sitios no es requerido por el frontend same-origin.
 
 Esta elección omite hosting estático S3 público, CloudFront, ACM y dominios. Serverless Framework aún necesita acceso a su bucket de artefactos para publicar Lambda. No se intenta crear ni abrir bucket web. Compose zero-config almacena state en un bucket S3 versionado y un parámetro SSM; con un solo servicio ese estado compartido no aporta valor y puede requerir permisos que Learner Lab no concede. Por eso el orquestador llama al servicio API directamente.
 
@@ -32,7 +32,7 @@ Seguir instrucciones completas y exactas en el README raíz:
 
 ```bash
 cp .env.example .env
-# configurar AWS_PROFILE, AWS_ACCOUNT_ID, stage y tokens privados
+# configurar AWS_PROFILE, AWS_ACCOUNT_ID, stage, hash Argon2id y secretos privados
 npm run academy:check -- --dry-run
 npm run academy:check
 npm run deploy:academy
@@ -50,3 +50,7 @@ Para limpieza: `npm run cleanup:academy` solicita confirmación tipada, retira �
 - Las tablas pueden no existir y la cuenta puede no autorizar su creación.
 - El rol LabRole puede carecer de permisos DynamoDB/logs; RUTEA no modifica el rol.
 - No se hicieron despliegues reales ni se ha verificado una cuenta Learner Lab en este entorno.
+
+## Sesion de operador
+
+Configurar `HECTOR_OPERATOR_PASSWORD_HASH` con un hash Argon2id y `HECTOR_SESSION_SIGNING_KEY` con un secreto aleatorio en el entorno privado. El helper `python scripts/hash-operator-password.py` pide la contrasena sin eco. El preflight exige hash Argon2id, clave de sesion suficiente, token independiente para ESP32 y `HECTOR_REQUIRE_AUTH=true`. El backend usa `TELEMETRY_TABLE` existente para filas de sesion y contadores atomicos de intentos. El rol de ejecucion necesita `GetItem`, `PutItem`, `UpdateItem`, `DeleteItem` y la tabla conserva TTL para limpiar registros expirados.

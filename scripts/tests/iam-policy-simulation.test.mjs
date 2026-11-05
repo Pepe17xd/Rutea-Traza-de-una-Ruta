@@ -61,7 +61,7 @@ test('runtime DynamoDB actions are grouped by exact table resource', () => {
   })
   assert.deepEqual(groups[1], {
     label: 'DynamoDB telemetry table',
-    actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query'],
+    actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:Query'],
     resources: [telemetryArn],
   })
 })

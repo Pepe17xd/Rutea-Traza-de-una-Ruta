@@ -30,7 +30,7 @@ export function dynamoRuntimeSimulationGroups(region, accountId, tableNames) {
     },
     {
       label: 'DynamoDB telemetry table',
-      actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query'],
+      actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:Query'],
       resources: [telemetry],
     },
     {

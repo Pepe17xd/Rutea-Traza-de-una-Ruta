@@ -17,22 +17,27 @@ from app.models.schemas import (Mission, MissionCreate, MissionPage, MissionStat
 from app.navigation.coordinates import LocalFrame, compass_to_math
 from app.navigation.trajectory import Point, distance, generate_waypoints, tracking_errors
 from app.api.events import hub
-from app.api.auth import require_device, require_operator
+from app.api.auth import COOKIE_NAME, origin_allowed, router as auth_router, require_device, require_operator, valid_session
 from app.pump.contract import simulated_pump_exchange
 
 
 FRONTEND_DIST = Path(__file__).resolve().parent / "frontend_dist"
 settings = get_settings()
-if settings.require_auth and (not settings.operator_token or not settings.device_token):
-    raise RuntimeError("HECTOR_REQUIRE_AUTH está activo: configura tokens de operador y dispositivo no vacíos")
 repo = DynamoRepository(settings.aws_region, settings.missions_table, settings.telemetry_table, telemetry_retention_days=settings.telemetry_retention_days) if settings.storage.lower() == "dynamodb" else SQLiteRepository(settings.sqlite_path)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if not settings.require_auth:
+        raise RuntimeError("HECTOR_REQUIRE_AUTH no se puede desactivar")
+    if not settings.device_token:
+        raise RuntimeError("HECTOR_REQUIRE_AUTH está activo: configura HECTOR_DEVICE_TOKEN")
+    if settings.require_auth and (not settings.operator_password_hash.startswith("$argon2id$") or len(settings.session_signing_key) < 32):
+        raise RuntimeError("HECTOR_REQUIRE_AUTH está activo: configura HECTOR_OPERATOR_PASSWORD_HASH Argon2id y HECTOR_SESSION_SIGNING_KEY")
     yield
 
 app = FastAPI(title="RUTEA API", version="1.0.0", description="Coordinación de misiones y recepción de telemetría normalizada. La API no controla motores.", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True, allow_methods=["GET","POST"], allow_headers=["Authorization","Content-Type","X-Device-Token"])
+app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True, allow_methods=["GET","POST"], allow_headers=["Content-Type","X-Device-Token","X-CSRF-Token"])
+app.include_router(auth_router)
 
 def now(): return datetime.now(timezone.utc)
 def plain(model):
@@ -296,11 +301,14 @@ def model_evaluation():
 
 @app.websocket("/api/v1/ws/robots/{robot_id}")
 async def robot_socket(ws: WebSocket, robot_id: str, token: str | None = None):
-    operator_ok=not settings.operator_token or secrets.compare_digest(token or "",settings.operator_token)
-    device_ok=not settings.device_token or secrets.compare_digest(token or "",settings.device_token)
+    if not origin_allowed(ws, ws.headers.get("origin")):
+        await ws.close(code=4403); return
+    session_id = ws.cookies.get(COOKIE_NAME)
+    operator_ok = valid_session(session_id)
+    device_ok = bool(settings.device_token) and secrets.compare_digest(token or "", settings.device_token)
     if not operator_ok and not device_ok:
         await ws.close(code=4401); return
-    device_socket=(bool(settings.device_token) and token == settings.device_token) or (not settings.operator_token and not settings.device_token)
+    device_socket = device_ok
     await hub.connect(robot_id, ws)
     try:
         while True:

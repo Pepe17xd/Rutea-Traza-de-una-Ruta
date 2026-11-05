@@ -11,9 +11,14 @@ class Settings(BaseSettings):
     missions_table: str = Field(default="HectorMissions", validation_alias="MISSIONS_TABLE")
     telemetry_table: str = Field(default="HectorTelemetry", validation_alias="TELEMETRY_TABLE")
     allowed_origins: str = "http://localhost:5173"
-    operator_token: str = ""
+    operator_password_hash: str = ""
+    session_signing_key: str = ""
+    session_ttl_s: int = Field(default=28800, ge=300, le=86400)
+    session_cookie_secure: bool = True
+    auth_login_attempts: int = Field(default=5, ge=3, le=20)
+    auth_login_window_s: int = Field(default=900, ge=60, le=3600)
     device_token: str = ""
-    require_auth: bool = False
+    require_auth: bool = True
     telemetry_max_age_s: float = 15.0
     telemetry_max_accuracy_m: float = 25.0
     telemetry_retention_days: int = Field(default=30, ge=1, le=365)

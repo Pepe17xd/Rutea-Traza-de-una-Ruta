@@ -49,7 +49,10 @@ for (const [label, command, pattern] of [
 }
 const py = run(python(), ['--version'], { capture: true })
 check(py.status === 0 && /Python 3\.12\./.test(py.stdout + py.stderr), 'Python 3.12 instalado para Lambda y dependencias')
-for (const key of ['HECTOR_OPERATOR_TOKEN', 'HECTOR_DEVICE_TOKEN']) check((process.env[key] || '').trim().length >= 24, `${key} configurado fuera de Git (longitud suficiente)`)
+check((process.env.HECTOR_OPERATOR_PASSWORD_HASH || '').startsWith('$argon2id$'), 'HECTOR_OPERATOR_PASSWORD_HASH Argon2id configurado fuera de Git')
+check((process.env.HECTOR_SESSION_SIGNING_KEY || '').trim().length >= 32, 'HECTOR_SESSION_SIGNING_KEY configurado fuera de Git (32 caracteres mínimos)')
+check((process.env.HECTOR_DEVICE_TOKEN || '').trim().length >= 24, 'HECTOR_DEVICE_TOKEN configurado fuera de Git (longitud suficiente)')
+check((process.env.HECTOR_REQUIRE_AUTH || 'true').toLowerCase() === 'true', 'HECTOR_REQUIRE_AUTH permanece activo')
 
 const sls = path.join(root, 'Backend', 'node_modules', 'serverless', 'run.js')
 check(existsSync(sls), 'Serverless Framework instalado en Backend')

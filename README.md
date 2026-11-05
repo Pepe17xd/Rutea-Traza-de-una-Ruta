@@ -41,6 +41,10 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 Copy-Item .env.example .env
 python -m pip install -e ".[dev]"
+# Genera el hash de operador de forma interactiva y pega ambos valores en Backend/.env:
+python ../scripts/hash-operator-password.py
+python -c "import secrets; print(secrets.token_hex(32))"  # asignar a HECTOR_SESSION_SIGNING_KEY
+python -c "import secrets; print(secrets.token_urlsafe(32))"  # asignar a HECTOR_DEVICE_TOKEN
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -53,7 +57,7 @@ npm.cmd ci
 npm.cmd run dev
 ```
 
-Abrir `http://localhost:5173`. Vite reenvía `/api` al backend local en `127.0.0.1:8000`. La sesión de operador se solicita desde la interfaz y se guarda en `sessionStorage`; no debe definirse `VITE_OPERATOR_TOKEN` ni compilarse una credencial en el bundle. API docs local: `http://127.0.0.1:8000/docs`.
+Abrir `http://localhost:5173`. Vite reenv?a `/api` al backend local en `127.0.0.1:8000`. El operador inicia sesion con una contrasena validada por FastAPI; el navegador recibe solo una cookie HttpOnly, sin token maestro en el frontend. API docs local: `http://127.0.0.1:8000/docs`.
 
 ## Requisitos para VM Ubuntu de AWS Academy
 
@@ -103,7 +107,7 @@ Abrir `http://localhost:5173`. Vite reenvía `/api` al backend local en `127.0.0
 
    - `AWS_ACCOUNT_ID`: número real de cuenta de 12 dígitos mostrado por `aws sts get-caller-identity`; el script exige que coincida, no lo descubre para sustituirlo ni lo fija.
    - `AWS_REGION=us-east-1`, `AWS_PROFILE=default`, `AWS_STAGE=academy` (o stage elegido).
-   - `HECTOR_OPERATOR_TOKEN` y `HECTOR_DEVICE_TOKEN`: tokens diferentes, aleatorios y privados, mínimo 24 caracteres. No se incluyen en frontend. La persona operadora los escribe en la interfaz; el firmware usa su token de dispositivo.
+   - `HECTOR_OPERATOR_PASSWORD_HASH`: hash Argon2id de la contrasena, y `HECTOR_SESSION_SIGNING_KEY`: secreto aleatorio de al menos 32 bytes. Genere el hash con `python scripts/hash-operator-password.py` y la clave con `openssl rand -hex 32`; configure ambos solo en `.env` privado o en el entorno seguro. `HECTOR_DEVICE_TOKEN` es independiente para ESP32; nunca se usa como contrasena de operador.
    - `RUTEA_CREATE_DYNAMO_TABLES=false` es el valor conservador. Si las tablas `rutea-<stage>-missions` y `rutea-<stage>-telemetry` no existen, el preflight se detiene. Solo cambiar a `true` si el laboratorio confirma `dynamodb:CreateTable`, `UpdateTimeToLive` y etiquetado. Las tablas quedan con `Retain` para preservar datos.
 
    Para crear tokens localmente sin mostrarlos, se puede usar un generador seguro del sistema y pegarlos directamente en `.env`; no escribirlos en el shell compartido ni en el historial. `.env` está ignorado por Git.
@@ -140,9 +144,15 @@ Abrir `http://localhost:5173`. Vite reenvía `/api` al backend local en `127.0.0
    aws logs tail /aws/lambda/rutea-api-academy-api --since 30m --follow --region us-east-1
    ```
 
-   El nombre real de la función puede consultarse como recurso `ApiLambdaFunction` del stack si difiere. API Gateway HTTPS tiene el formato `https://<api-id>.execute-api.us-east-1.amazonaws.com/`; la SPA está en `/` y la API en `/api/v1`. Las rutas protegidas requieren el token de operador ingresado en la aplicación. El dispositivo transmite su token en `X-Device-Token`.
+Las rutas protegidas requieren una sesion de contrasena mediante cookie HttpOnly, Secure y SameSite=Strict. La sesion vence en ocho horas por defecto; CSRF protege mutaciones y FastAPI limita intentos con contadores atomicos en DynamoDB. El dispositivo conserva autenticacion independiente mediante `X-Device-Token`.
 
 9. Actualizar después de cambios: `git pull`, instalar dependencias con `npm ci --prefix Frontend` y `npm ci --prefix Backend` si existe lockfile backend, luego `npm run test:all`, `npm run build:all`, `npm run academy:check` y `npm run deploy:academy`. No volver a configurar credenciales si el perfil temporal sigue vigente.
+
+## Acceso de operador
+
+Configure `HECTOR_OPERATOR_PASSWORD_HASH` como hash PHC Argon2id y `HECTOR_SESSION_SIGNING_KEY` como secreto aleatorio de al menos 32 bytes en el entorno privado. Genere el hash con `python scripts/hash-operator-password.py`, que solicita la contrasena sin mostrarla, y la clave con `openssl rand -hex 32`. Nunca configure la contrasena en Vite ni use `HECTOR_DEVICE_TOKEN` como acceso de operador.
+
+La cookie de sesion es HttpOnly, Secure en AWS, SameSite=Strict y vence en ocho horas por defecto. FastAPI requiere CSRF para mutaciones y limita por defecto cinco intentos por IP en una ventana de 15 minutos mediante un contador atomico compartido por DynamoDB; en desarrollo se usa SQLite local. `HECTOR_REQUIRE_AUTH=true` es obligatorio para despliegue. `HECTOR_SESSION_TTL_S`, `HECTOR_SESSION_COOKIE_SECURE`, `HECTOR_AUTH_LOGIN_ATTEMPTS` y `HECTOR_AUTH_LOGIN_WINDOW_S` permiten ajustar los limites documentados.
 
 ## Comandos desde la raíz
 

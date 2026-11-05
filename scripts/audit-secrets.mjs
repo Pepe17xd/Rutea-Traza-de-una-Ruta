@@ -53,7 +53,7 @@ else {
     const revisions = commits.stdout.split(/\r?\n/).filter(Boolean)
     if (revisions.length > 500) console.log(`Aviso: ${revisions.length} commits; escaneo de blobs omitido por seguridad de tiempo. Ejecutar gitleaks antes de publicar.`)
     else {
-      const pattern = "(AKIA[[:alnum:]]{16}|ASIA[[:alnum:]]{16}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|(AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|HECTOR_OPERATOR_TOKEN|HECTOR_DEVICE_TOKEN)[[:space:]]*[:=][[:space:]]*['\"]?[A-Za-z0-9/+=_-]{24,})"
+      const pattern = "(AKIA[[:alnum:]]{16}|ASIA[[:alnum:]]{16}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|(AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|HECTOR_OPERATOR_TOKEN|HECTOR_DEVICE_TOKEN|HECTOR_SESSION_SIGNING_KEY)[[:space:]]*[:=][[:space:]]*['\"]?[A-Za-z0-9/+=_-]{24,}|HECTOR_OPERATOR_PASSWORD_HASH[[:space:]]*[:=][[:space:]]*['\"]?\\$argon2id\\$[[:alnum:]/+=_$-]{30,})"
       const historical = new Set()
       for (const revision of revisions) {
         const found = spawnSync('git', ['grep', '-I', '-l', '-E', pattern, revision, '--'], { cwd: root, encoding: 'utf8' })

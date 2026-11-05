@@ -8,8 +8,12 @@ import pytest
 @pytest.fixture
 def client(tmp_path,monkeypatch):
     monkeypatch.setattr(main,"repo",SQLiteRepository(str(tmp_path/"device-commands.db")))
+    monkeypatch.setattr(get_settings(),"sqlite_path",str(tmp_path/"device-commands.db"))
     from fastapi.testclient import TestClient
     with TestClient(main.app) as test_client:
+        login=test_client.post('/api/v1/auth/login',json={"password":"rutea-test-password"})
+        assert login.status_code==200,login.text
+        test_client.headers.update({"X-CSRF-Token":login.json()["csrf_token"]})
         yield test_client
 
 
@@ -64,11 +68,11 @@ def test_destination_sequence_payload_and_expiry_rejections(client):
 def test_device_auth_for_destination_poll_and_operator_pump_contract(client,monkeypatch):
     settings=get_settings()
     monkeypatch.setattr(settings,"device_token","device-key")
-    monkeypatch.setattr(settings,"operator_token","operator-key")
+    # Operator access is a server-validated session cookie; device token stays independent.
     assert client.get('/api/v1/robots/CAR_TEST/commands/next').status_code==401
     assert client.get('/api/v1/robots/CAR_TEST/commands/next',headers={"X-Device-Token":"device-key"}).status_code==204
     assert client.post('/api/v1/robots/CAR_TEST/pump/commands',json={"command":"ON"}).status_code==401
-    result=client.post('/api/v1/robots/CAR_TEST/pump/commands',json={"command":"ON"},headers={"Authorization":"Bearer operator-key"})
+    result=client.post('/api/v1/robots/CAR_TEST/pump/commands',json={"command":"ON"})
     assert result.status_code==200
     assert result.json()=={"robot_id":"CAR_TEST","command":"ON","wire_payload":"ON","transport":"SIMULATED","receipt":"SIMULATED_RECEIPT","authorization":"NOT_AUTHORIZED_NO_PHYSICAL_INTERLOCKS","confirmed_state":None,"physical_output_enabled":False}
-    assert client.post('/api/v1/robots/CAR_TEST/pump/commands',json={"command":"on"},headers={"Authorization":"Bearer operator-key"}).status_code==422
+    assert client.post('/api/v1/robots/CAR_TEST/pump/commands',json={"command":"on"}).status_code==422

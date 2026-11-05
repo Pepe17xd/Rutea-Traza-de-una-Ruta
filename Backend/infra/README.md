@@ -15,7 +15,9 @@ Configurar desde un gestor seguro/entorno de servicio, sin introducir secretos e
 | `MISSIONS_TABLE` | Tabla con partition key `mission_id` (String) |
 | `TELEMETRY_TABLE` | Tabla con partition key `mission_id` (String) y sort key `sample_key` (String) |
 | `HECTOR_ALLOWED_ORIGINS` | Orígenes exactos del frontend, separados por coma |
-| `HECTOR_DEVICE_TOKEN`, `HECTOR_OPERATOR_TOKEN` | Tokens de MVP; producción requiere autenticación gestionada |
+| `HECTOR_DEVICE_TOKEN` | Credencial independiente de ESP32 |
+| `HECTOR_OPERATOR_PASSWORD_HASH` | Hash PHC Argon2id, nunca contrasena en claro |
+| `HECTOR_SESSION_SIGNING_KEY` | Secreto aleatorio para sesiones y rate-limit distribuido |
 | `HECTOR_TELEMETRY_MAX_AGE_S` | Antigüedad máxima de muestras |
 | `HECTOR_TELEMETRY_MAX_ACCURACY_M` | Rechazo de precisión inadecuada |
 | `HECTOR_MODEL_PATH` | Directorio de artefacto ML confiable |
@@ -26,7 +28,7 @@ La app usa credenciales por defecto de boto3 (preferir IAM instance profile/role
 
 Crear `Missions` con PK `mission_id` (String) y GSI `robot_created` con PK `robot_id` (String), SK `created_at` (String ISO UTC), proyección `ALL`; `Telemetry` usa PK `mission_id` (String), SK `sample_key` (String). El GSI permite historial paginado por robot en orden descendente. El adaptador guarda las muestras de una misión ordenables por timestamp/sequence. En la tabla `Telemetry` también se usan particiones reservadas `DEVICE#<robot_id>` para el vínculo del dispositivo y el estado de secuencia/timestamp monotónico. Aplicar retención TTL si la política del laboratorio lo requiere.
 
-El rol EC2 debe tener solo `dynamodb:GetItem`, `PutItem`, `UpdateItem`, `Query`, `Scan`, `TransactWriteItems` en los ARN de estas dos tablas e índice `robot_created`, además de permisos mínimos de logs/SSM que el despliegue use. La última telemetría usa `GetItem`; Scan solo se conserva para listados administrativos sin filtro de robot. No conceder `CreateTable` al rol de runtime.
+El rol EC2 debe tener solo `dynamodb:GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query`, `Scan`, `TransactWriteItems` en los ARN de estas dos tablas e índice `robot_created`, además de permisos mínimos de logs/SSM que el despliegue use. La última telemetría usa `GetItem`; Scan solo se conserva para listados administrativos sin filtro de robot. No conceder `CreateTable` al rol de runtime.
 
 ## EC2 + HTTPS/WSS
 
