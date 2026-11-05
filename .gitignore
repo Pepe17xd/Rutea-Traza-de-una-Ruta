@@ -46,6 +46,7 @@ Firmware/.cache/
 .serverless/
 .serverlessrc
 .rutea-deploy-state.json
+.rutea-package-*/
 RUTEA-recovery-source-*.zip
 .aws-sam/
 artifacts/

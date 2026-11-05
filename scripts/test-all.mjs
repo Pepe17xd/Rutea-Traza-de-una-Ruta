@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { python, root, run } from './lib.mjs'
 const pioEnv = { ...process.env, PLATFORMIO_CORE_DIR: path.join(root, 'Firmware', '.platformio-core') }
 console.log('Tests unitarios de simulación IAM…')
-run(process.execPath, ['--test', path.join(root, 'scripts', 'tests', 'iam-policy-simulation.test.mjs'), path.join(root, 'scripts', 'tests', 'dynamo-plan.test.mjs'), path.join(root, 'scripts', 'tests', 'cloudformation-graph.test.mjs')], { cwd: root })
+run(process.execPath, ['--test', path.join(root, 'scripts', 'tests', 'iam-policy-simulation.test.mjs'), path.join(root, 'scripts', 'tests', 'dynamo-plan.test.mjs'), path.join(root, 'scripts', 'tests', 'cloudformation-graph.test.mjs'), path.join(root, 'scripts', 'tests', 'package-path.test.mjs')], { cwd: root })
 console.log('Validando Compose, Serverless y CloudFormation localmente…')
 run(python(), [path.join(root, 'scripts', 'validate-config.py')], { cwd: root })
 console.log('Suite backend Python…')

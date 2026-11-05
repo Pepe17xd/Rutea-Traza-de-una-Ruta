@@ -200,4 +200,6 @@ Backend Python usa SQLite local y DynamoDB en AWS. Entrenamiento scikit-learn es
 
 ## Verificacion antes del despliegue
 
+Serverless empaqueta en un directorio temporal unico `.rutea-package-*` en la raiz, fuera de `Backend/.serverless`. El script valida el grafo del paquete y utiliza esa misma ruta para desplegar; despues elimina solamente el directorio creado durante esa ejecucion. Los directorios restantes por una interrupcion estan ignorados por Git y no se reutilizan. Si existe el directorio legado `Backend/.serverless/academy-package`, el proceso se detiene para que se revise antes de retirarlo: podria contener configuracion generada privada.
+
 `npm run deploy:academy` instala dependencias Python de desarrollo y ejecuta pytest, pruebas IAM y de plan de tablas, pruebas nativas PlatformIO y build frontend. Si una prueba falla, se detiene antes de publicar. El grafo de la plantilla Serverless empaquetada se valida antes del despliegue. Para permitir creacion de tablas faltantes, configure `RUTEA_CREATE_DYNAMO_TABLES=true` en el entorno privado; esto no autoriza por si solo una creacion si fallan las simulaciones IAM. Las tablas externas existentes no se adoptan ni se recrean. Revise permisos y cuotas del laboratorio.

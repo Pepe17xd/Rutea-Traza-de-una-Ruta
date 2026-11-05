@@ -1,7 +1,8 @@
 import path from 'node:path'
-import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { assertFile, awsJson, isWindows, python, root, run } from './lib.mjs'
 import { planTables } from './dynamo-plan.mjs'
+import { assertPackageDirectory, packageInvocation } from './package-path.mjs'
 
 const args = process.argv.slice(2)
 const dry = args.includes('--dry-run') || args.includes('--plan-only')
@@ -91,12 +92,21 @@ cpSync(dist, staged, { recursive: true })
 const sls = path.join(root, 'Backend', 'node_modules', 'serverless', 'run.js')
 const tablePlan = planTables({ names: tableNames, stage, region, createAllowed: process.env.RUTEA_CREATE_DYNAMO_TABLES === 'true', awsJson })
 const params = [`--param=createMissionsTable=${tablePlan.missions.declare}`, `--param=createTelemetryTable=${tablePlan.telemetry.declare}`]
-const packageDir = path.join(root, 'Backend', '.serverless', 'academy-package')
-console.log('Empaquetando y validando el grafo CloudFormation generado...')
-run(process.execPath, [sls, 'package', '--config', path.join(root, 'Backend', 'serverless.yml'), '--stage', stage, '--region', region, '--package', packageDir, ...params], { cwd: root, timeout: 20 * 60 * 1000 })
-run(process.execPath, [path.join(root, 'scripts', 'cloudformation-graph.mjs'), path.join(packageDir, 'cloudformation-template-update-stack.json')], { cwd: root })
-console.log(`Desplegando servicio RUTEA (${stage}/${region})...`)
-run(process.execPath, [sls, 'deploy', '--config', path.join(root, 'Backend', 'serverless.yml'), '--stage', stage, '--region', region, '--package', packageDir, ...params], { cwd: root, timeout: 45 * 60 * 1000 })
+const legacyPackage = path.join(root, 'Backend', '.serverless', 'academy-package')
+if (existsSync(legacyPackage)) throw new Error('Existe Backend/.serverless/academy-package de un intento anterior; revíselo y retírelo del directorio .serverless antes de continuar, sin borrar configuraciones privadas.')
+const packageDir = mkdtempSync(path.join(root, '.rutea-package-'))
+try {
+  assertPackageDirectory(packageDir, path.join(root, 'Backend', '.serverless'))
+  const calls = packageInvocation(sls, path.join(root, 'Backend', 'serverless.yml'), stage, region, packageDir, params)
+  console.log('Empaquetando y validando el grafo CloudFormation generado...')
+  run(process.execPath, calls.packageArgs, { cwd: root, timeout: 20 * 60 * 1000 })
+  run(process.execPath, [path.join(root, 'scripts', 'cloudformation-graph.mjs'), calls.template], { cwd: root })
+  console.log(`Desplegando servicio RUTEA (${stage}/${region})...`)
+  run(process.execPath, calls.deployArgs, { cwd: root, timeout: 45 * 60 * 1000 })
+} finally {
+  // Only remove the unique directory created for this invocation.
+  rmSync(packageDir, { recursive: true, force: true })
+}
 const stackName = `rutea-api-${stage}`
 const outputs = awsJson(['cloudformation', 'describe-stacks', '--stack-name', stackName, '--region', region]).Stacks?.[0]?.Outputs
 const output = (key) => {
