@@ -42,12 +42,17 @@ def test_login_cookie_session_csrf_and_logout(tmp_path, monkeypatch):
 def test_wrong_password_and_rate_limit(tmp_path, monkeypatch):
     client, _ = make_client(tmp_path, monkeypatch)
     with client:
-        wrong = client.post("/api/v1/auth/login", json={"password": "incorrecta"})
-        assert wrong.status_code == 401 and "incorrecta" not in wrong.text
+        wrong_password = "valor-de-prueba-no-valido"
+        wrong = client.post("/api/v1/auth/login", json={"password": wrong_password})
+        assert wrong.status_code == 401 and wrong_password not in wrong.text
+        detail = wrong.json()["detail"]
+        assert isinstance(detail, str) and detail
         assert client.get("/api/v1/missions").status_code == 401
         for _ in range(get_settings().auth_login_attempts - 1):
-            response = client.post("/api/v1/auth/login", json={"password": "incorrecta"})
-        assert response.status_code == 401
+            other_password = "otro-valor-de-prueba"
+            response = client.post("/api/v1/auth/login", json={"password": other_password})
+            assert response.status_code == 401
+            assert response.json()["detail"] == detail and other_password not in response.text
         locked = client.post("/api/v1/auth/login", json={"password": "rutea-test-password"})
         assert locked.status_code == 429
 

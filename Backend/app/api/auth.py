@@ -97,7 +97,7 @@ async def login(request: Request, response: Response):
     except (VerifyMismatchError, VerificationError, InvalidHashError):
         password_ok = False
     if not password_ok:
-        raise HTTPException(401, "Contraseña incorrecta")
+        raise HTTPException(401, "Credenciales inválidas")
     session_id = secrets.token_urlsafe(32)
     expires_at = now + settings.session_ttl_s
     try:

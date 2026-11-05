@@ -11,10 +11,17 @@ def test_serverless_config_is_http_only_cost_guarded_and_reuses_lab_role():
     assert config["provider"]["region"] == "${opt:region, env:AWS_REGION, 'us-east-1'}"
     assert config["provider"]["iam"]["role"] == "arn:aws:iam::${env:AWS_ACCOUNT_ID}:role/LabRole"
     assert "httpApi" not in config["provider"]  # SPA y API usan el mismo origen HTTPS.
-    assert config["resources"]["Resources"]["MissionsTable"]["Condition"] == "CreateDynamoTables"
-    assert config["resources"]["Resources"]["TelemetryTable"]["Condition"] == "CreateDynamoTables"
+    resources = config["resources"]["Resources"]
+    conditions = config["resources"]["Conditions"]
+    assert resources["MissionsTable"]["Condition"] == "CreateMissionsTable"
+    assert resources["TelemetryTable"]["Condition"] == "CreateTelemetryTable"
+    assert conditions["CreateMissionsTable"]["Fn::Equals"] == ["${param:createMissionsTable, 'false'}", "true"]
+    assert conditions["CreateTelemetryTable"]["Fn::Equals"] == ["${param:createTelemetryTable, 'false'}", "true"]
+    assert {name for name, resource in resources.items() if resource.get("Type") == "AWS::DynamoDB::Table"} == {"MissionsTable", "TelemetryTable"}
+    for name in ("MissionsTable", "TelemetryTable"):
+        assert resources[name]["DeletionPolicy"] == "Retain"
+        assert resources[name]["UpdateReplacePolicy"] == "Retain"
     assert config["resources"]["Resources"]["TelemetryTable"]["Properties"]["BillingMode"] == "PAY_PER_REQUEST"
-    assert config["resources"]["Resources"]["MissionsTable"]["DeletionPolicy"] == "Retain"
     assert "ApiBaseUrl" in config["resources"]["Outputs"]
     assert "FrontendUrl" in config["resources"]["Outputs"]
     assert config["resources"]["Resources"]["ApiLogGroup"]["Properties"]["RetentionInDays"] == 7
