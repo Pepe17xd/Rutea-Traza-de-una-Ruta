@@ -80,21 +80,23 @@ custom:
 
 resources:
   Conditions:
-    CreateDynamoTables:
+    CreateMissionsTable:
       Fn::Equals:
-        - ${param:createDynamoTables, 'false'}
+        - ${param:createMissionsTable, 'false'}
+        - 'true'
+    CreateTelemetryTable:
+      Fn::Equals:
+        - ${param:createTelemetryTable, 'false'}
         - 'true'
   Resources:
     ApiLogGroup:
       Type: AWS::Logs::LogGroup
-      DependsOn: ApiLambdaFunction
       Properties:
-        LogGroupName:
-          Fn::Sub: /aws/lambda/${ApiLambdaFunction}
+        LogGroupName: /aws/lambda/${self:service}-${sls:stage}-api
         RetentionInDays: 7
     MissionsTable:
       Type: AWS::DynamoDB::Table
-      Condition: CreateDynamoTables
+      Condition: CreateMissionsTable
       DeletionPolicy: Retain
       UpdateReplacePolicy: Retain
       Properties:
@@ -124,7 +126,7 @@ resources:
             Value: RUTEA
     TelemetryTable:
       Type: AWS::DynamoDB::Table
-      Condition: CreateDynamoTables
+      Condition: CreateTelemetryTable
       DeletionPolicy: Retain
       UpdateReplacePolicy: Retain
       Properties:

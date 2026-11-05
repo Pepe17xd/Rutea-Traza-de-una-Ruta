@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
+import { planTables } from './dynamo-plan.mjs'
 import { assertFile, awsJson, isWindows, python, root, run } from './lib.mjs'
 import {
   deniedIamEvaluations,
@@ -97,23 +98,19 @@ for (const group of dynamoRuntimeSimulationGroups(region, identity.Account, name
 }
 simulate(roleArn, ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'], ['*'], 'CloudWatch Logs de ejecucion')
 
-if (process.env.RUTEA_CREATE_DYNAMO_TABLES === 'true') {
-  for (const group of dynamoProvisioningSimulationGroups(region, identity.Account, names, true)) {
+for (const group of dynamoProvisioningSimulationGroups(region, identity.Account, names, false)) {
+  simulate(callerArn, group.actions, group.resources, group.label)
+}
+let tablePlan
+try { tablePlan = planTables({ names, stage, region, createAllowed: process.env.RUTEA_CREATE_DYNAMO_TABLES === 'true', awsJson }) }
+catch (error) { fail(error.message) }
+const missingNames = Object.fromEntries(Object.entries(tablePlan).filter(([, table]) => table.create).map(([kind, table]) => [kind, table.name]))
+if (Object.keys(missingNames).length) {
+  for (const group of dynamoProvisioningSimulationGroups(region, identity.Account, missingNames, true).slice(1)) {
     simulate(callerArn, group.actions, group.resources, group.label)
-  }
-  for (const table of Object.values(names)) {
-    try { awsJson(['dynamodb', 'describe-table', '--table-name', table, '--region', region]); fail(`La tabla ${table} ya existe; desactiva creacion automatica para proteger datos`) }
-    catch (error) { if (/BLOQUEO:/.test(error.message)) throw error; if (!/ResourceNotFoundException|ResourceNotFound/.test(error.message)) fail(`No se pudo revisar tabla ${table}: ${error.message}`) }
-  }
-} else {
-  for (const group of dynamoProvisioningSimulationGroups(region, identity.Account, names, false)) {
-    simulate(callerArn, group.actions, group.resources, group.label)
-  }
-  for (const table of Object.values(names)) {
-    try { awsJson(['dynamodb', 'describe-table', '--table-name', table, '--region', region]); console.log(`✓ Tabla DynamoDB legible: ${table}`) }
-    catch (error) { fail(`No se encontro/leyo la tabla ${table}; crea las tablas solo si Learner Lab autoriza, con RUTEA_CREATE_DYNAMO_TABLES=true: ${error.message}`) }
   }
 }
+for (const table of Object.values(tablePlan)) console.log(`Tabla ${table.name}: ${table.create ? 'creacion autorizada, pendiente de despliegue' : table.managed ? 'existente administrada por el stack' : 'existente externa, conservada'}`)
 
 for (const [service, args] of [
   ['CloudFormation', ['cloudformation', 'describe-account-limits', '--region', region]],

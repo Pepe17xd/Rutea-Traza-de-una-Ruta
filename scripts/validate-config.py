@@ -42,6 +42,12 @@ assert backend["functions"]["api"]["events"]
 assert backend["resources"]["Resources"]["MissionsTable"]["DeletionPolicy"] == "Retain"
 assert backend["resources"]["Resources"]["TelemetryTable"]["DeletionPolicy"] == "Retain"
 assert backend["resources"]["Resources"]["ApiLogGroup"]["Properties"]["RetentionInDays"] <= 14
+log_group = backend["resources"]["Resources"]["ApiLogGroup"]
+assert "DependsOn" not in log_group
+assert log_group["Properties"]["LogGroupName"] == "/aws/lambda/${self:service}-${sls:stage}-api"
+assert backend["resources"]["Resources"]["MissionsTable"]["Condition"] == "CreateMissionsTable"
+assert backend["resources"]["Resources"]["TelemetryTable"]["Condition"] == "CreateTelemetryTable"
+assert all(backend["resources"]["Resources"][name]["UpdateReplacePolicy"] == "Retain" for name in ("MissionsTable", "TelemetryTable"))
 outputs = backend["resources"]["Outputs"]
 assert "FrontendUrl" in outputs and "ApiBaseUrl" in outputs
 assert "HttpApi" in str(outputs["FrontendUrl"]["Value"])

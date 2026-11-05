@@ -108,7 +108,7 @@ Abrir `http://localhost:5173`. Vite reenv?a `/api` al backend local en `127.0.0.
    - `AWS_ACCOUNT_ID`: número real de cuenta de 12 dígitos mostrado por `aws sts get-caller-identity`; el script exige que coincida, no lo descubre para sustituirlo ni lo fija.
    - `AWS_REGION=us-east-1`, `AWS_PROFILE=default`, `AWS_STAGE=academy` (o stage elegido).
    - `HECTOR_OPERATOR_PASSWORD_HASH`: hash Argon2id de la contrasena, y `HECTOR_SESSION_SIGNING_KEY`: secreto aleatorio de al menos 32 bytes. Genere el hash con `python scripts/hash-operator-password.py` y la clave con `openssl rand -hex 32`; configure ambos solo en `.env` privado o en el entorno seguro. `HECTOR_DEVICE_TOKEN` es independiente para ESP32; nunca se usa como contrasena de operador.
-   - `RUTEA_CREATE_DYNAMO_TABLES=false` es el valor conservador. Si las tablas `rutea-<stage>-missions` y `rutea-<stage>-telemetry` no existen, el preflight se detiene. Solo cambiar a `true` si el laboratorio confirma `dynamodb:CreateTable`, `UpdateTimeToLive` y etiquetado. Las tablas quedan con `Retain` para preservar datos.
+   - `RUTEA_CREATE_DYNAMO_TABLES=false` es el valor conservador. Si falta alguna tabla, el preflight se detiene salvo que se configure `true` como autorizacion explicita y se verifiquen los permisos de creacion, TTL y etiquetado. Las tablas existentes externas se conservan; las administradas por el stack permanecen declaradas. Solo se crean las tablas faltantes y se mantienen las politicas Retain.
 
    Para crear tokens localmente sin mostrarlos, se puede usar un generador seguro del sistema y pegarlos directamente en `.env`; no escribirlos en el shell compartido ni en el historial. `.env` está ignorado por Git.
 
@@ -134,7 +134,7 @@ Abrir `http://localhost:5173`. Vite reenv?a `/api` al backend local en `127.0.0.
    npm run deploy:academy
    ```
 
-   El comando instala dependencias fijadas, repite el preflight, compila el frontend con `/api/v1` relativo y transporte polling, revisa que no incluya `localhost`, empaqueta SPA + FastAPI y despliega `Backend/serverless.yml` mediante el CLI local de Serverless Framework. Finalmente consulta los outputs HTTPS, solicita la web, sus bundles y `/api/v1/health`. Una fase fallida termina con error y no imprime éxito. La URL guardada también queda en `.rutea-deploy-state.json` (ignorado por Git).
+   El comando instala dependencias, ejecuta las pruebas obligatorias, repite el preflight, detecta cada tabla, compila el frontend con `/api/v1` relativo y transporte polling, revisa que no incluya `localhost`, empaqueta SPA + FastAPI, comprueba que la plantilla CloudFormation generada no tenga ciclos y despliega el paquete validado mediante Serverless Framework. Finalmente consulta los outputs HTTPS, solicita la web, sus bundles y `/api/v1/health`. Una fase fallida termina con error y no imprime éxito. La URL guardada también queda en `.rutea-deploy-state.json` (ignorado por Git).
 
 8. Verificar más adelante, revisar los recursos y registros:
 
@@ -197,3 +197,7 @@ Backend Python usa SQLite local y DynamoDB en AWS. Entrenamiento scikit-learn es
 ## GitHub y secretos
 
 `.env`, credenciales AWS, tokens, `.venv`, `node_modules`, `.serverless`, `.pio`, DB locales, bundles y estado de deploy se excluyen. Comprobar `npm run audit:secrets` antes de commits. La VM debe obtener credenciales temporales directamente desde Learner Lab; no insertar access keys, session token o Wi-Fi en GitHub.
+
+## Verificacion antes del despliegue
+
+`npm run deploy:academy` instala dependencias Python de desarrollo y ejecuta pytest, pruebas IAM y de plan de tablas, pruebas nativas PlatformIO y build frontend. Si una prueba falla, se detiene antes de publicar. El grafo de la plantilla Serverless empaquetada se valida antes del despliegue. Para permitir creacion de tablas faltantes, configure `RUTEA_CREATE_DYNAMO_TABLES=true` en el entorno privado; esto no autoriza por si solo una creacion si fallan las simulaciones IAM. Las tablas externas existentes no se adoptan ni se recrean. Revise permisos y cuotas del laboratorio.

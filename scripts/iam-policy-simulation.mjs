@@ -1,5 +1,5 @@
 export const GENERIC_DEPLOY_ACTIONS = Object.freeze([
-  'cloudformation:CreateStack', 'cloudformation:UpdateStack', 'cloudformation:DeleteStack', 'cloudformation:DescribeStacks', 'cloudformation:CreateChangeSet', 'cloudformation:ExecuteChangeSet', 'cloudformation:DescribeChangeSet',
+  'cloudformation:CreateStack', 'cloudformation:UpdateStack', 'cloudformation:DeleteStack', 'cloudformation:DescribeStacks', 'cloudformation:DescribeStackResources', 'cloudformation:CreateChangeSet', 'cloudformation:ExecuteChangeSet', 'cloudformation:DescribeChangeSet',
   'lambda:CreateFunction', 'lambda:GetFunction', 'lambda:UpdateFunctionCode', 'lambda:UpdateFunctionConfiguration', 'lambda:DeleteFunction', 'lambda:AddPermission', 'lambda:RemovePermission', 'lambda:TagResource', 'lambda:UntagResource',
   'apigateway:POST', 'apigateway:GET', 'apigateway:PATCH', 'apigateway:DELETE',
   'logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents', 'logs:PutRetentionPolicy',

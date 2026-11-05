@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { assertFile, awsJson, isWindows, root, run } from './lib.mjs'
+import { assertFile, awsJson, isWindows, python, root, run } from './lib.mjs'
+import { planTables } from './dynamo-plan.mjs'
 
 const args = process.argv.slice(2)
 const dry = args.includes('--dry-run') || args.includes('--plan-only')
@@ -12,9 +13,11 @@ const tableNames = {
 }
 const plan = [
   'Instalar dependencias Node de Frontend y Backend usando lockfiles disponibles.',
+  'Instalar Python y ejecutar pruebas obligatorias.',
   'Ejecutar preflight: cuenta STS contra AWS_ACCOUNT_ID, LabRole, permisos IAM y tablas DynamoDB.',
   'Compilar RUTEA con API relativa /api/v1 y polling; comprobar que el build no contiene localhost.',
   'Empaquetar el build SPA en Backend/app/frontend_dist para servirlo desde FastAPI.',
+  'Empaquetar y validar el grafo CloudFormation generado.',
   'Desplegar el único servicio Serverless API: Lambda FastAPI + API Gateway HTTP API + DynamoDB.',
   'Verificar la URL HTTPS publicada, recursos estáticos y /api/v1/health.',
 ]
@@ -42,6 +45,12 @@ else {
   console.warn('Backend/package-lock.json no está en este clon; generando lock local desde Serverless fijado exactamente en package.json.')
   run(npm, ['install', '--prefix', path.join(root, 'Backend'), '--no-audit', '--no-fund', '--save-exact'])
 }
+
+console.log('Preparando entorno Python y pruebas obligatorias...')
+const venv = path.join(root, 'Backend', '.venv')
+if (!existsSync(path.join(venv, 'bin', 'python'))) run('python3.12', ['-m', 'venv', venv])
+run(python(), ['-m', 'pip', 'install', '-e', '.[dev,aws]', 'platformio'], { cwd: path.join(root, 'Backend'), timeout: 15 * 60 * 1000 })
+run(process.execPath, [path.join(root, 'scripts', 'test-all.mjs')], { cwd: root, timeout: 30 * 60 * 1000 })
 
 console.log('Ejecutando preflight AWS Academy en modo de solo lectura…')
 run(process.execPath, [path.join(root, 'scripts', 'preflight.mjs'), `--stage=${stage}`])
@@ -79,9 +88,15 @@ if (!staged.startsWith(expected)) throw new Error('Ruta de staging fuera de Back
 rmSync(staged, { recursive: true, force: true })
 cpSync(dist, staged, { recursive: true })
 
-console.log(`Desplegando servicio RUTEA único a AWS (${stage}/${region})…`)
 const sls = path.join(root, 'Backend', 'node_modules', 'serverless', 'run.js')
-run(process.execPath, [sls, 'deploy', '--config', path.join(root, 'Backend', 'serverless.yml'), '--stage', stage, '--region', region], { cwd: root, timeout: 45 * 60 * 1000 })
+const tablePlan = planTables({ names: tableNames, stage, region, createAllowed: process.env.RUTEA_CREATE_DYNAMO_TABLES === 'true', awsJson })
+const params = [`--param=createMissionsTable=${tablePlan.missions.declare}`, `--param=createTelemetryTable=${tablePlan.telemetry.declare}`]
+const packageDir = path.join(root, 'Backend', '.serverless', 'academy-package')
+console.log('Empaquetando y validando el grafo CloudFormation generado...')
+run(process.execPath, [sls, 'package', '--config', path.join(root, 'Backend', 'serverless.yml'), '--stage', stage, '--region', region, '--package', packageDir, ...params], { cwd: root, timeout: 20 * 60 * 1000 })
+run(process.execPath, [path.join(root, 'scripts', 'cloudformation-graph.mjs'), path.join(packageDir, 'cloudformation-template-update-stack.json')], { cwd: root })
+console.log(`Desplegando servicio RUTEA (${stage}/${region})...`)
+run(process.execPath, [sls, 'deploy', '--config', path.join(root, 'Backend', 'serverless.yml'), '--stage', stage, '--region', region, '--package', packageDir, ...params], { cwd: root, timeout: 45 * 60 * 1000 })
 const stackName = `rutea-api-${stage}`
 const outputs = awsJson(['cloudformation', 'describe-stacks', '--stack-name', stackName, '--region', region]).Stacks?.[0]?.Outputs
 const output = (key) => {
@@ -111,6 +126,11 @@ for (const url of assets) {
 const health = await check(healthUrl)
 const healthData = await health.json()
 if (healthData.status !== 'ok') throw new Error(`Health API inesperado: ${JSON.stringify(healthData)}`)
+if (healthData.storage !== 'dynamodb') throw new Error('La API publicada no utiliza DynamoDB')
+const sessionResponse = await check(`${apiBase}/auth/session`)
+if ((await sessionResponse.json()).authenticated !== false) throw new Error('La sesion anonima no fue rechazada')
+const protectedResponse = await fetch(`${apiBase}/missions?limit=1`, { signal: AbortSignal.timeout(30000) })
+if (protectedResponse.status !== 401) throw new Error(`La API protegida sin sesion respondio HTTP ${protectedResponse.status}; se esperaba 401`)
 
 const account = awsJson(['sts', 'get-caller-identity', '--region', region]).Account
 if (account !== process.env.AWS_ACCOUNT_ID) throw new Error('La identidad cambió respecto a AWS_ACCOUNT_ID tras desplegar.')
