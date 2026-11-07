@@ -14,8 +14,8 @@ export default function MapView({ current, destination, mission, trace, onPick }
     instance.on('load', () => {
       instance.addSource('ideal', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] }, properties: {} } })
       instance.addSource('actual', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] }, properties: {} } })
-      instance.addLayer({ id: 'ideal-line', type: 'line', source: 'ideal', paint: { 'line-color': '#41d69a', 'line-width': 4, 'line-opacity': 0.9, 'line-dasharray': [1.5, 1] } })
-      instance.addLayer({ id: 'actual-line', type: 'line', source: 'actual', paint: { 'line-color': '#f59a49', 'line-width': 3, 'line-opacity': 0.95 } })
+      instance.addLayer({ id: 'ideal-line', type: 'line', source: 'ideal', paint: { 'line-color': '#a5bd57', 'line-width': 4, 'line-opacity': 0.95, 'line-dasharray': [1.5, 1] } })
+      instance.addLayer({ id: 'actual-line', type: 'line', source: 'actual', paint: { 'line-color': '#d18b59', 'line-width': 3, 'line-opacity': 0.95 } })
     })
     instance.on('click', e => onPick({ lat: e.lngLat.lat, lon: e.lngLat.lng }))
     return () => { currentMarker.current?.remove(); destMarker.current?.remove(); instance.remove(); map.current = null }
@@ -28,11 +28,11 @@ export default function MapView({ current, destination, mission, trace, onPick }
       if (ideal) ideal.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: (mission?.waypoints || []).map(p => [p.lon,p.lat]) }, properties: {} })
       if (actual) actual.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: trace.filter(p=>p.lat!=null&&p.lon!=null&&p.gps_fix_valid!==false).map(p => [p.lon!,p.lat!]) }, properties: {} })
       if (current && current.lat != null && current.lon != null && current.gps_fix_valid !== false) {
-        if (!currentMarker.current) currentMarker.current = new maplibregl.Marker({ color: '#4ea4ff' }).setLngLat([current.lon,current.lat]).addTo(instance)
+        if (!currentMarker.current) currentMarker.current = new maplibregl.Marker({ color: '#8eaa91' }).setLngLat([current.lon,current.lat]).addTo(instance)
         else currentMarker.current.setLngLat([current.lon,current.lat])
       } else { currentMarker.current?.remove(); currentMarker.current = null }
       if (destination) {
-        if (!destMarker.current) destMarker.current = new maplibregl.Marker({ color: '#41d69a' }).setLngLat([destination.lon,destination.lat]).addTo(instance)
+        if (!destMarker.current) destMarker.current = new maplibregl.Marker({ color: '#a5bd57' }).setLngLat([destination.lon,destination.lat]).addTo(instance)
         else destMarker.current.setLngLat([destination.lon,destination.lat])
       } else { destMarker.current?.remove(); destMarker.current = null }
     }
