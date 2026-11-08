@@ -1,0 +1,46 @@
+{
+  "version": "mlp-v1",
+  "seed": 2,
+  "episode_count": 30,
+  "split_episode_counts": {
+    "train": 20,
+    "validation": 5,
+    "test": 5
+  },
+  "target": "bounded expert angular correction (rad/s)",
+  "test_mae_rps": 0.038928712050127184,
+  "test_rmse_rps": 0.05770600253846864,
+  "validation_mae_rps": 0.04548923967978679,
+  "features": [
+    "cross_track_error_m",
+    "heading_error_rad",
+    "distance_to_goal_m",
+    "speed_mps",
+    "previous_omega_rps",
+    "dt_s"
+  ],
+  "synthetic_navigation_comparison": {
+    "basis": "paired synthetic differential-drive scenarios, same initial conditions and disturbances",
+    "seed": 7044,
+    "comparison": {
+      "base": {
+        "episodes": 30,
+        "rmse_lateral_m": 0.9776487504794995,
+        "max_lateral_error_m": 4.1136552795814705,
+        "arrival_rate": 0.0,
+        "mean_time_s": null,
+        "mean_control_effort": 1.8865770337098786
+      },
+      "base_plus_ml": {
+        "episodes": 30,
+        "rmse_lateral_m": 0.9955022780058005,
+        "max_lateral_error_m": 4.120632265772704,
+        "arrival_rate": 0.0,
+        "mean_time_s": null,
+        "mean_control_effort": 1.9241358781763325
+      }
+    },
+    "hardware_evidence": false
+  },
+  "interpretation": "Synthetic offline dataset; predictive metrics do not establish physical or navigation improvement."
+}

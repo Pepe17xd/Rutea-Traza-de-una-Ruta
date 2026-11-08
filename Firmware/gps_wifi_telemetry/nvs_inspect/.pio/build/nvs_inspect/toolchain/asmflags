@@ -1,0 +1,6 @@
+-Wno-frame-address
+-mlongcalls
+-fno-builtin-memcpy
+-fno-builtin-memset
+-fno-builtin-bzero
+"-specs=C:/Users/anton/Desktop/Hector/Firmware/gps_wifi_telemetry/nvs_inspect/.pio/build/nvs_inspect/specs/picolibc.specs"

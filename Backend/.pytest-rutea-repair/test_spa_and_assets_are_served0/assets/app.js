@@ -1,0 +1,1 @@
+window.RUTEA = true

@@ -192,6 +192,20 @@ class DynamoRepository(Repository):
         from boto3.dynamodb.types import TypeSerializer
 
         robot_id = data["robot_id"]
+        sequence = data.get("sequence")
+        timestamp = data.get("timestamp")
+        # TransactWriteItems is called through the low-level boto3 client, whose
+        # ExpressionAttributeValues must be DynamoDB AttributeValue objects.
+        # Validate these ordered operands as native scalars first so an already
+        # serialized dict (for example {"N": "2"}) cannot be serialized again
+        # into an M operand, which DynamoDB cannot compare with '<'.
+        if type(sequence) is not int or sequence < 0:
+            raise ValueError("sequence debe ser un entero Python sin serializar")
+        if not isinstance(timestamp, str) or not timestamp:
+            raise ValueError("timestamp debe ser una cadena ISO 8601 sin serializar")
+        sequence_av = {"N": str(sequence)}
+        timestamp_av = {"S": timestamp}
+
         device_partition = f"DEVICE#{robot_id}"
         binding_key = {"mission_id": device_partition, "sample_key": "BINDING"}
         try:
@@ -229,8 +243,8 @@ class DynamoRepository(Repository):
                     "ConditionExpression": "(attribute_not_exists(#seq) OR #seq < :seq) AND (attribute_not_exists(#ts) OR #ts < :ts)",
                     "ExpressionAttributeNames": {"#seq": "sequence", "#ts": "timestamp"},
                     "ExpressionAttributeValues": {
-                        ":seq": wire(data["sequence"]),
-                        ":ts": wire(data["timestamp"]),
+                        ":seq": sequence_av,
+                        ":ts": timestamp_av,
                     },
                 }
             },
@@ -239,7 +253,7 @@ class DynamoRepository(Repository):
                     "TableName": self.telemetry.name,
                     "Item": {k: wire(v) for k, v in latest.items()},
                     "ConditionExpression": "attribute_not_exists(sequence) OR sequence < :seq",
-                    "ExpressionAttributeValues": {":seq": wire(data["sequence"])},
+                    "ExpressionAttributeValues": {":seq": sequence_av},
                 }
             },
         ]

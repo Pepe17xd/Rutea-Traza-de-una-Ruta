@@ -1,4 +1,6 @@
 from types import SimpleNamespace
+import pytest
+
 from app.db.dynamodb import DynamoRepository
 
 
@@ -109,13 +111,40 @@ def test_append_telemetry_transacts_sequence_latest_and_trace_with_ttl():
     transaction = resource.client.transactions[0]["TransactItems"]
     assert len(transaction) == 3
     assert "Update" in transaction[0]
+    update_values = transaction[0]["Update"]["ExpressionAttributeValues"]
+    assert update_values[":seq"] == {"N": "3"}
+    assert update_values[":ts"] == {"S": "2026-11-04T12:00:00+00:00"}
     latest = transaction[1]["Put"]["Item"]
+    assert transaction[1]["Put"]["ExpressionAttributeValues"][":seq"] == {"N": "3"}
     trace = transaction[2]["Put"]["Item"]
     assert latest["mission_id"]["S"] == "ROBOT#CART-1"
     assert latest["sample_key"]["S"] == "LATEST"
     assert latest["reported_mission_id"]["S"] == "mission-1"
     assert trace["mission_id"]["S"] == "mission-1"
     assert trace["expires_at"]["N"].isdigit()
+
+
+def test_append_telemetry_rejects_double_serialized_sequence_before_writing():
+    from boto3.dynamodb.types import TypeSerializer
+
+    repo, resource = repository()
+    data = {
+        "robot_id": "CART-1",
+        "device_id": "ESP32-1",
+        "mission_id": None,
+        # This is already an AttributeValue. Serializing it again produces M,
+        # which reproduces DynamoDB's '< operand type: M' ValidationException.
+        "sequence": {"N": "2"},
+        "timestamp": "2026-11-04T12:00:00+00:00",
+    }
+
+    assert TypeSerializer().serialize(data["sequence"]) == {"M": {"N": {"S": "2"}}}
+    with pytest.raises(ValueError, match="sequence debe ser un entero Python sin serializar"):
+        repo.append_telemetry(data)
+
+    # Reject before establishing the binding or sending a transaction.
+    assert repo.telemetry.calls == []
+    assert resource.client.transactions == []
 
 
 def test_trace_query_uses_mission_partition_and_resumes_cursor():
